@@ -12,6 +12,12 @@ Start the database containers in detached mode:
 docker compose up -d
 ```
 
+### Running multiple microservices
+
+The root Compose file includes the microservices and a local Keycloak instance on one network. Build the AccountManager JAR and configure the [local Keycloak setup](microservices/accountManager/README.md#run-locally), then run `docker compose up --build -d` from the repository root. To also start the frontend, StoryContentManager, and RecapManager, prepare their build artifacts and settings and run `docker compose --profile prod up --build -d`.
+
+Define shared services in the root Compose file. Define each microservice and its own dependencies in that microservice's Compose file.
+
 If you need a clean MySQL reseed, recreate the Docker volumes:
 
 All our SQL scripts are in rpg_mysql folder

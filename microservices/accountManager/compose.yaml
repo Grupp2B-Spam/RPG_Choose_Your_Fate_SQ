@@ -1,0 +1,9 @@
+services:
+  account-manager:
+    build: .
+    ports:
+      - "127.0.0.1:8092:8092"
+    environment:
+      OIDC_ISSUER_URI: "${OIDC_ISSUER_URI:-${OIDC_BASE_URL:-http://localhost:8082}/realms/choose-your-fate}"
+      OIDC_JWKS_URI: "${OIDC_JWKS_URI:-http://keycloak:8080/realms/choose-your-fate/protocol/openid-connect/certs}"
+      OIDC_AUDIENCE: "${OIDC_AUDIENCE:-account-manager}"

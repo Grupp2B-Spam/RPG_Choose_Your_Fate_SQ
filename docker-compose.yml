@@ -1,7 +1,33 @@
-# mysql server seeded with databases from dump files in the folder ./rpg_mysql
-# The seeding only happens on the first start when the volume is created.
-# If you need to reset the seeding, run "docker compose down -v" to delete the volume.
+# Root compose for the whole system.
+#
+# Each microservice owns a compose file next to its code, describing the service and the
+# database it owns. They are merged into one project here, so everything shares a network
+# and each person edits only their own file. Relative paths inside an included file
+# resolve against that file's directory, so a service also runs on its own.
+include:
+  - microservices/storycontent-manager/compose.yaml
+  - microservices/recapManager/docker-compose-recap-manager.yml
+  - microservices/accountManager/compose.yaml
+
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_HOSTNAME: "${OIDC_BASE_URL:-http://localhost:8082}"
+      KC_BOOTSTRAP_ADMIN_USERNAME:
+      KC_BOOTSTRAP_ADMIN_PASSWORD:
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+      - type: bind
+        source: ./microservices/auth/choose-your-fate-realm.json
+        target: /opt/keycloak/data/import/choose-your-fate-realm.json
+        read_only: true
+        bind:
+          create_host_path: false
+
   frontend:
     profiles: ["prod"]
     build:
@@ -11,56 +37,29 @@ services:
     ports:
       - "5173:80"
 
-  backend:
-    profiles: ["prod"]
-    build: ./choose-your-fate-backend
-    ports:
-      - "8080:8080"
+  # Shared message broker. The management plugin exposes a UI on 15672 where exchanges,
+  # queues and bindings can be inspected while developing — without a bound queue a topic
+  # exchange discards messages silently, which is otherwise hard to tell from a bug.
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: choose-your-fate-rabbitmq
     environment:
-      MYSQL_URI: jdbc:mysql://rpg_mysql_sq:3306/choose_your_fate
-      MYSQL_USERNAME: root
-      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
-      MYSQL_SECONDARY_URI: jdbc:mysql://rpg_mysql_secondary:3306/choose_your_fate
-      MYSQL_SECONDARY_USERNAME: root
-      MYSQL_SECONDARY_PASSWORD: ${MYSQL_SECONDARY_ROOT_PASSWORD:-123456}
-      ELEVEN_LABS_API_KEY: ${ELEVEN_LABS_API_KEY:-}
-      AI_ENABLED: false
-    depends_on:
-      rpg_mysql_sq: 
-        condition: service_healthy
-        
-  rpg_mysql_sq:
-    image: mysql:9.5.0
-    container_name: rpg_mysql_sq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     ports:
-      - "3307:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      - "5672:5672"
+      - "15672:15672"
     volumes:
-      - rpg_mysql_sq:/var/lib/mysql
-      - ./rpg_mysql_sq:/docker-entrypoint-initdb.d
-    hostname: rpg_mysql_sq
+      - rabbitmq-data:/var/lib/rabbitmq
+    hostname: rabbitmq
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-123456}"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
-
-  rpg_mysql_secondary:
-    image: mysql:9.5.0
-    container_name: rpg_mysql_secondary
-    ports:
-      - "3308:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_SECONDARY_ROOT_PASSWORD:-123456}
-    volumes:
-      - rpg_mysql_secondary:/var/lib/mysql
-      - ./rpg_mysql_sq:/docker-entrypoint-initdb.d
-    hostname: rpg_mysql_secondary
+      start_period: 20s
+    restart: unless-stopped
 
 volumes:
-  rpg_mysql_sq:
-    driver: local
-  rpg_mysql_secondary:
-    driver: local
+  keycloak-data:
+  rabbitmq-data:
